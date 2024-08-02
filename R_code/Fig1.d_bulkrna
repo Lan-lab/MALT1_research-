@@ -1,0 +1,79 @@
+##########################################
+#RNA-seq analysis 
+##########################################
+#1. set up 
+##########################################
+setwd("./Sourcedata/")
+gene_count1 <- read.table("rna_genename_quality.counts",header = T,sep="\t")
+gene_count<-gene_count1[,7:dim(gene_count1)[2]]
+gene_count<-as.matrix(gene_count)
+rownames(gene_count)<-gene_count1$Geneid
+colnames(gene_count)<-c("tumor_E0771_Control_rep1","tumor_E0771_Control_rep2","tumor_E0771_Control_rep3",
+                        "tumor_E0771_Malt1_WT_rep1","tumor_E0771_Malt1_WT_rep2","tumor_E0771_Malt1_WT_rep3",
+                        "tumor_E0771_Malt1_Mutant_rep1","tumor_E0771_Malt1_Mutant_rep2","tumor_E0771_Malt1_Mutant_rep3",
+                        "cellline_E0771_Control_rep1","cellline_E0771_Control_rep2","cellline_E0771_Control_rep3",
+                        "cellline_E0771_Malt1_WT_rep1","cellline_E0771_Malt1_WT_rep2","cellline_E0771_Malt1_WT_rep3",
+                        "cellline_E0771_Malt1_Mutant_rep1","cellline_E0771_Malt1_Mutant_rep2","cellline_E0771_Malt1_Mutant_rep3")
+gene_count<-gene_count[,10:15]
+x<-gene_count
+
+library(edgeR)
+x <- DGEList(counts = gene_count,genes = rownames(gene_count))
+
+# raw data
+lcpm_raw <- cpm(x,log = TRUE)
+
+# normalization
+x <- calcNormFactors(x,method = "TMM")
+lcpm_norm <- cpm(x,log=TRUE)
+
+counts <- x$counts
+
+# edgeR objects
+##########################################
+library(edgeR)
+library(RColorBrewer)
+
+########################################
+# normalization
+########################################
+
+
+#MDS plots of log-rpkm values over dimensions 1 and 2 
+#with samples coloured and labeled by sample groups
+group <- c("Control","Control","Control","Malt1_WT","Malt1_WT","Malt1_WT")
+x$samples$group <- as.factor(group)
+
+########################################
+#Differential expression analysis
+########################################
+#Creating a design matrix and contrasts
+design <- model.matrix(~0+group)
+design
+colnames(design) <- gsub("group", "", colnames(design))
+design
+contr.matrix <- makeContrasts(
+  MALT1vscontrol = Malt1_WT-Control,
+  levels = colnames(design))
+contr.matrix
+#Removing heteroscedascity from count data
+v <- voom(x, design, plot=TRUE)
+v
+
+
+#Fitting linear models for comparisons of interest
+vfit <- lmFit(v, design)
+vfit <- contrasts.fit(vfit, contrasts=contr.matrix)
+efit <- eBayes(vfit)
+#plotSA(efit)
+
+#Examining the number of DE genes
+summary(decideTests(efit))
+tfit <- treat(vfit, lfc=1)
+dt <- decideTests(tfit)
+summary(dt)
+
+MALT1vscontrol <- topTreat(tfit, coef=1,n=Inf)
+MALT1vscontrol2<-cbind(gene_count[match(MALT1vscontrol$genes,rownames(gene_count)),],MALT1vscontrol)
+MALT1vscontrol3<-MALT1vscontrol2[match(rownames(gene_count),MALT1vscontrol2$genes),]
+write.csv(MALT1vscontrol3,file="MALT1vscontrol.csv",quote = F)
